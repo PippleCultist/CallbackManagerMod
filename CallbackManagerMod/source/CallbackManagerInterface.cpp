@@ -167,7 +167,10 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	{
 		codeEventCallbackMap[CodeEventName] = CallbackRoutineList<CodeEvent>();
 	}
-	codeEventCallbackMap[CodeEventName].routineList.push_back(std::move(CallbackRoutine(BeforeCodeEventRoutine, AfterCodeEventRoutine, ModName)));
+	if (BeforeCodeEventRoutine != nullptr && AfterCodeEventRoutine != nullptr)
+	{
+		codeEventCallbackMap[CodeEventName].routineList.push_back(std::move(CallbackRoutine(BeforeCodeEventRoutine, AfterCodeEventRoutine, ModName)));
+	}
 	return AURIE_SUCCESS;
 }
 
@@ -177,7 +180,8 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 	IN const std::string& ModName,
 	IN const std::string& ScriptFunctionName,
 	IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
-	IN PFUNC_YYGMLScript AfterScriptFunctionRoutine
+	IN PFUNC_YYGMLScript AfterScriptFunctionRoutine,
+	OUT PFUNC_YYGMLScript& OriginalScriptFunctionRoutine
 )
 {
 	AurieStatus status = AURIE_SUCCESS;
@@ -262,7 +266,11 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 		callbackRoutineList->callbackRoutine = funcPtr;
 		callbackRoutineList->originalFunction = (PFUNC_YYGMLScript)trampolineFunc;
 	}
-	scriptFunctionCallbackMap[ScriptFunctionName].routineList.push_back(std::move(CallbackRoutine(BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, ModName)));
+	if (BeforeScriptFunctionRoutine != nullptr && AfterScriptFunctionRoutine != nullptr)
+	{
+		scriptFunctionCallbackMap[ScriptFunctionName].routineList.push_back(std::move(CallbackRoutine(BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, ModName)));
+	}
+	OriginalScriptFunctionRoutine = scriptFunctionCallbackMap[ScriptFunctionName].originalFunction;
 	return AURIE_SUCCESS;
 }
 
