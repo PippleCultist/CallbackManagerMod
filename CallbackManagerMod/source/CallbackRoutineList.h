@@ -2,21 +2,27 @@
 #include <YYToolkit/Shared.hpp>
 #include <vector>
 
+template <typename RoutineType>
 struct CallbackRoutine
 {
-	PFUNC_YYGMLScript beforeRoutine;
-	PFUNC_YYGMLScript afterRoutine;
-	CallbackRoutine(PFUNC_YYGMLScript beforeRoutine, PFUNC_YYGMLScript afterRoutine) : beforeRoutine(beforeRoutine), afterRoutine(afterRoutine)
+	RoutineType beforeRoutine;
+	RoutineType afterRoutine;
+	std::string modName;
+	bool callOriginalFunctionFlag;
+	bool cancelOriginalFunctionFlag;
+	CallbackRoutine(RoutineType beforeRoutine, RoutineType afterRoutine, std::string modName) : beforeRoutine(beforeRoutine), afterRoutine(afterRoutine), modName(modName),
+		callOriginalFunctionFlag(false), cancelOriginalFunctionFlag(false)
 	{
 	}
 };
 
-struct ScriptFunctionCallbackRoutineList
+template <typename RoutineType>
+struct CallbackRoutineList
 {
-	std::vector<CallbackRoutine> routineList;
-	PFUNC_YYGMLScript scriptFunctionCallbackRoutine;
-	PFUNC_YYGMLScript origScriptFunction;
-	ScriptFunctionCallbackRoutineList() : scriptFunctionCallbackRoutine(nullptr), origScriptFunction(nullptr)
+	std::vector<CallbackRoutine<RoutineType>> routineList;
+	RoutineType callbackRoutine;
+	RoutineType originalFunction;
+	CallbackRoutineList() : callbackRoutine(nullptr), originalFunction(nullptr)
 	{
 	}
 };

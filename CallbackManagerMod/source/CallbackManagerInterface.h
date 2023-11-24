@@ -4,6 +4,9 @@
 using namespace Aurie;
 using namespace YYTK;
 
+typedef std::tuple<CInstance*, CInstance*, CCode*, int, RValue*> CodeEventArgs;
+typedef void (*CodeEvent)(CodeEventArgs&);
+
 struct CallbackManagerInterface : AurieInterfaceBase
 {
 	virtual AurieStatus Create();
@@ -19,9 +22,10 @@ struct CallbackManagerInterface : AurieInterfaceBase
 	* This will run the code event after all before routines run and before any after routines run.
 	*/
 	virtual AurieStatus RegisterCodeEventCallback(
+		IN const std::string& ModName,
 		IN const std::string& CodeEventName,
-		IN PFUNC_YYGMLScript BeforeCodeEventRoutine,
-		IN PFUNC_YYGMLScript AfterCodeEventRoutine
+		IN CodeEvent BeforeCodeEventRoutine,
+		IN CodeEvent AfterCodeEventRoutine
 	);
 
 	/*
@@ -29,6 +33,7 @@ struct CallbackManagerInterface : AurieInterfaceBase
 	* This will run the script function after all before routines run and before any after routines run.
 	*/
 	virtual AurieStatus RegisterScriptFunctionCallback(
+		IN const std::string& ModName,
 		IN const std::string& ScriptFunctionName,
 		IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
 		IN PFUNC_YYGMLScript AfterScriptFunctionRoutine

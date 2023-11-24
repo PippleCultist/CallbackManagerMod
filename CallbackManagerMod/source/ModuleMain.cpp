@@ -8,7 +8,6 @@ YYTKInterface* g_ModuleInterface = nullptr;
 YYRunnerInterface g_RunnerInterface;
 AurieModule* g_AurieModule = nullptr;
 
-std::unordered_map<std::string, ScriptFunctionCallbackRoutineList> scriptFunctionCallbackMap;
 CallbackManagerInterface callbackManager;
 
 EXPORTED AurieStatus ModulePreinitialize(
