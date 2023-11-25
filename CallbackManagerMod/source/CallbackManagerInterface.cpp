@@ -167,7 +167,7 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	{
 		codeEventCallbackMap[CodeEventName] = CallbackRoutineList<CodeEvent>();
 	}
-	if (BeforeCodeEventRoutine != nullptr && AfterCodeEventRoutine != nullptr)
+	if (BeforeCodeEventRoutine != nullptr || AfterCodeEventRoutine != nullptr)
 	{
 		codeEventCallbackMap[CodeEventName].routineList.push_back(std::move(CallbackRoutine(BeforeCodeEventRoutine, AfterCodeEventRoutine, ModName)));
 	}
@@ -181,7 +181,7 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 	IN const std::string& ScriptFunctionName,
 	IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
 	IN PFUNC_YYGMLScript AfterScriptFunctionRoutine,
-	OUT PFUNC_YYGMLScript& OriginalScriptFunctionRoutine
+	OUT PFUNC_YYGMLScript* OriginalScriptFunctionRoutine
 )
 {
 	AurieStatus status = AURIE_SUCCESS;
@@ -241,7 +241,7 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 				}
 				else if (callFlag || !cancelFlag)
 				{
-					callbackRoutineList->originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
+					ret = callbackRoutineList->originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
 				}
 				for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList->routineList)
 				{
@@ -266,11 +266,14 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 		callbackRoutineList->callbackRoutine = funcPtr;
 		callbackRoutineList->originalFunction = (PFUNC_YYGMLScript)trampolineFunc;
 	}
-	if (BeforeScriptFunctionRoutine != nullptr && AfterScriptFunctionRoutine != nullptr)
+	if (BeforeScriptFunctionRoutine != nullptr || AfterScriptFunctionRoutine != nullptr)
 	{
 		scriptFunctionCallbackMap[ScriptFunctionName].routineList.push_back(std::move(CallbackRoutine(BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, ModName)));
 	}
-	OriginalScriptFunctionRoutine = scriptFunctionCallbackMap[ScriptFunctionName].originalFunction;
+	if (OriginalScriptFunctionRoutine != nullptr)
+	{
+		*OriginalScriptFunctionRoutine = scriptFunctionCallbackMap[ScriptFunctionName].originalFunction;
+	}
 	return AURIE_SUCCESS;
 }
 

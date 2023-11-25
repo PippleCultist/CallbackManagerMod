@@ -37,7 +37,7 @@ struct CallbackManagerInterface : AurieInterfaceBase
 		IN const std::string& ScriptFunctionName,
 		IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
 		IN PFUNC_YYGMLScript AfterScriptFunctionRoutine,
-		OUT PFUNC_YYGMLScript& OriginalScriptFunctionRoutine
+		OUT PFUNC_YYGMLScript* OriginalScriptFunctionRoutine
 	);
 
 	/*
