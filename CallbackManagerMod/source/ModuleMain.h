@@ -6,4 +6,3 @@ using namespace YYTK;
 
 extern YYTKInterface* g_ModuleInterface;
 extern YYRunnerInterface g_RunnerInterface;
-extern AurieModule* g_AurieModule;

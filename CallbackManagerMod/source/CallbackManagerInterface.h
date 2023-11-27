@@ -6,6 +6,7 @@ using namespace YYTK;
 
 typedef std::tuple<CInstance*, CInstance*, CCode*, int, RValue*> CodeEventArgs;
 typedef void (*CodeEvent)(CodeEventArgs&);
+using TRoutine = void(__cdecl*)(RValue* Result, CInstance* Self, CInstance* Other, int numArgs, RValue* Args);
 
 struct CallbackManagerInterface : AurieInterfaceBase
 {
@@ -38,6 +39,18 @@ struct CallbackManagerInterface : AurieInterfaceBase
 		IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
 		IN PFUNC_YYGMLScript AfterScriptFunctionRoutine,
 		OUT PFUNC_YYGMLScript* OriginalScriptFunctionRoutine
+	);
+
+	/*
+	* Call this to register a routine that will run before the builtin function happens and another routine that will run after.
+	* This will run the script function after all before routines run and before any after routines run.
+	*/
+	virtual AurieStatus RegisterBuiltinFunctionCallback(
+		IN const std::string& ModName,
+		IN const std::string& BuiltinFunctionName,
+		IN TRoutine BeforeBuiltinFunctionRoutine,
+		IN TRoutine AfterBuiltinFunctionRoutine,
+		OUT TRoutine* OriginalBuiltinFunctionRoutine
 	);
 
 	/*

@@ -1,6 +1,7 @@
 #include "CallbackManagerInterface.h"
 #include "ModuleMain.h"
 #include <YYToolkit/shared.hpp>
+#include <array>
 
 using namespace Aurie;
 using namespace YYTK;
@@ -23,33 +24,6 @@ void CallbackManagerInterface::QueryVersion(
 	Major = 1;
 	Minor = 0;
 	Patch = 0;
-}
-
-// Copied from https://stackoverflow.com/questions/7852101/c-lambda-with-captures-as-a-function-pointer
-
-template <class F>
-struct lambda_traits : lambda_traits<decltype(&F::operator())>
-{ };
-
-template <typename F, typename R, typename... Args>
-struct lambda_traits<R(F::*)(Args...)> : lambda_traits<R(F::*)(Args...) const>
-{ };
-
-template <class F, class R, class... Args>
-struct lambda_traits<R(F::*)(Args...) const> {
-	using pointer = typename std::add_pointer<R(Args...)>::type;
-
-	static pointer cify(F&& f) {
-		static F fn = std::forward<F>(f);
-		return [](Args... args) {
-			return fn(std::forward<Args>(args)...);
-		};
-	}
-};
-
-template <class F>
-inline typename lambda_traits<F>::pointer cify(F&& f) {
-	return lambda_traits<F>::cify(std::forward<F>(f));
 }
 
 bool callOriginalFunctionFlag = false;
@@ -152,7 +126,7 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	AurieStatus status = AURIE_SUCCESS;
 	if (!hasCreatedCodeEventCallback)
 	{
-		status = g_ModuleInterface->CreateCallback(g_AurieModule, EVENT_OBJECT_CALL, CodeCallback, 0);
+		status = g_ModuleInterface->CreateCallback(g_ArSelfModule, EVENT_OBJECT_CALL, CodeCallback, 0);
 
 		if (!AurieSuccess(status))
 		{
@@ -174,8 +148,106 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	return AURIE_SUCCESS;
 }
 
-std::unordered_map<std::string, CallbackRoutineList<PFUNC_YYGMLScript>> scriptFunctionCallbackMap;
+const int maxScriptFunctionCallbacks = 1000;
+struct ScriptFunctionCallbackObject
+{
+	CallbackRoutineList<PFUNC_YYGMLScript> callbackRoutineList;
 
+	ScriptFunctionCallbackObject()
+	{
+	}
+
+	ScriptFunctionCallbackObject(CallbackRoutineList<PFUNC_YYGMLScript> callbackRoutineList) : callbackRoutineList(callbackRoutineList)
+	{
+	}
+
+	RValue* HandleScriptFunctionCallback(
+		IN CInstance* Self,
+		IN CInstance* Other,
+		OUT RValue* ReturnValue,
+		IN int ArgumentCount,
+		IN RValue** Arguments
+	)
+	{
+		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
+		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+		bool callFlag = false;
+		bool cancelFlag = false;
+		callOriginalFunctionFlag = false;
+		cancelOriginalFunctionFlag = false;
+		for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList.routineList)
+		{
+			if (routine.beforeRoutine != nullptr)
+			{
+				routine.beforeRoutine(Self, Other, ReturnValue, ArgumentCount, Arguments);
+				routine.callOriginalFunctionFlag = callOriginalFunctionFlag;
+				routine.cancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+				callFlag = callFlag || callOriginalFunctionFlag;
+				cancelFlag = cancelFlag || cancelOriginalFunctionFlag;
+				callOriginalFunctionFlag = false;
+				cancelOriginalFunctionFlag = false;
+			}
+		}
+		RValue* ret = ReturnValue;
+		if (callFlag && cancelFlag)
+		{
+			g_ModuleInterface->Print(CM_RED, "ERROR: A CALL AND CANCEL REQUEST WAS SENT TO THE FUNCTION %s", callbackRoutineList.name.c_str());
+			for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList.routineList)
+			{
+				if (routine.callOriginalFunctionFlag)
+				{
+					g_ModuleInterface->Print(CM_RED, "CALL REQUEST: %s", routine.modName.c_str());
+				}
+				if (routine.cancelOriginalFunctionFlag)
+				{
+					g_ModuleInterface->Print(CM_RED, "CANCEL REQUEST: %s", routine.modName.c_str());
+				}
+			}
+		}
+		else if (callFlag || !cancelFlag)
+		{
+			ret = callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
+		}
+		for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList.routineList)
+		{
+			if (routine.afterRoutine != nullptr)
+			{
+				routine.afterRoutine(Self, Other, ReturnValue, ArgumentCount, Arguments);
+			}
+		}
+		callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
+		cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
+		return ret;
+	}
+} scriptFunctionCallbackArr[maxScriptFunctionCallbacks];
+
+template<size_t index>
+RValue* scriptFunctionCallbackHelper(
+	IN CInstance* Self,
+	IN CInstance* Other,
+	OUT RValue* ReturnValue,
+	IN int ArgumentCount,
+	IN RValue** Arguments
+)
+{
+	return scriptFunctionCallbackArr[index].HandleScriptFunctionCallback(Self, Other, ReturnValue, ArgumentCount, Arguments);
+}
+
+template<size_t... Is>
+auto MakeScriptFunctionCallbackArrayHelper(std::integer_sequence<size_t, Is...>)
+{
+	return std::array{ scriptFunctionCallbackHelper<Is>... };
+}
+
+template<size_t size>
+auto MakeScriptFunctionCallbackArray()
+{
+	return MakeScriptFunctionCallbackArrayHelper(std::make_index_sequence<size>{});
+}
+
+std::unordered_map<std::string, ScriptFunctionCallbackObject*> scriptFunctionNameCallbackMap;
+auto scriptFunctionCallbackObjectArr = MakeScriptFunctionCallbackArray<maxScriptFunctionCallbacks>();
+int numScriptCallback = 0;
 AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 	IN const std::string& ModName,
 	IN const std::string& ScriptFunctionName,
@@ -185,10 +257,9 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 )
 {
 	AurieStatus status = AURIE_SUCCESS;
-	auto callbackList = scriptFunctionCallbackMap.find(ScriptFunctionName);
-	if (callbackList == scriptFunctionCallbackMap.end())
+	auto callbackList = scriptFunctionNameCallbackMap.find(ScriptFunctionName);
+	if (callbackList == scriptFunctionNameCallbackMap.end())
 	{
-		CallbackRoutineList<PFUNC_YYGMLScript>* callbackRoutineList = &(scriptFunctionCallbackMap[ScriptFunctionName] = CallbackRoutineList<PFUNC_YYGMLScript>());
 		int scriptIndex = g_RunnerInterface.Script_Find_Id(ScriptFunctionName.c_str()) - 100000;
 		CScript* scriptPtr = nullptr;
 		status = g_ModuleInterface->GetScriptData(scriptIndex, scriptPtr);
@@ -197,82 +268,175 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 			g_ModuleInterface->Print(CM_RED, "Failed obtaining script function data for %s at script index %d with status %d", ScriptFunctionName.c_str(), scriptIndex, status);
 			return AURIE_EXTERNAL_ERROR;
 		}
-		PFUNC_YYGMLScript funcPtr = cify([callbackRoutineList, scriptPtr](
-			IN CInstance* Self,
-			IN CInstance* Other,
-			OUT RValue* ReturnValue,
-			IN int ArgumentCount,
-			IN RValue** Arguments
-			) -> RValue* {
-				bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
-				bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
-				bool callFlag = false;
-				bool cancelFlag = false;
-				callOriginalFunctionFlag = false;
-				cancelOriginalFunctionFlag = false;
-				for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList->routineList)
-				{
-					if (routine.beforeRoutine != nullptr)
-					{
-						routine.beforeRoutine(Self, Other, ReturnValue, ArgumentCount, Arguments);
-						routine.callOriginalFunctionFlag = callOriginalFunctionFlag;
-						routine.cancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
-						callFlag = callFlag || callOriginalFunctionFlag;
-						cancelFlag = cancelFlag || cancelOriginalFunctionFlag;
-						callOriginalFunctionFlag = false;
-						cancelOriginalFunctionFlag = false;
-					}
-				}
-				RValue* ret = ReturnValue;
-				if (callFlag && cancelFlag)
-				{
-					g_ModuleInterface->Print(CM_RED, "ERROR: A CALL AND CANCEL REQUEST WAS SENT TO THE FUNCTION %s", scriptPtr->GetName());
-					for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList->routineList)
-					{
-						if (routine.callOriginalFunctionFlag)
-						{
-							g_ModuleInterface->Print(CM_RED, "CALL REQUEST: %s", routine.modName.c_str());
-						}
-						if (routine.cancelOriginalFunctionFlag)
-						{
-							g_ModuleInterface->Print(CM_RED, "CANCEL REQUEST: %s", routine.modName.c_str());
-						}
-					}
-				}
-				else if (callFlag || !cancelFlag)
-				{
-					ret = callbackRoutineList->originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
-				}
-				for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList->routineList)
-				{
-					if (routine.afterRoutine != nullptr)
-					{
-						routine.afterRoutine(Self, Other, ReturnValue, ArgumentCount, Arguments);
-					}
-				}
-				callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
-				cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
-				return ret;
-			}
-		);
-		
+		if (numScriptCallback >= maxScriptFunctionCallbacks)
+		{
+			g_ModuleInterface->Print(CM_RED, "Failed to register %s since the number of script function callbacks has exceeded %d", ScriptFunctionName.c_str(), maxScriptFunctionCallbacks);
+			return AURIE_EXTERNAL_ERROR;
+		}
+		scriptFunctionNameCallbackMap[ScriptFunctionName] = &(scriptFunctionCallbackArr[numScriptCallback] = ScriptFunctionCallbackObject(CallbackRoutineList<PFUNC_YYGMLScript>(ScriptFunctionName)));
+
 		PVOID trampolineFunc = nullptr;
-		status = MmCreateHook(g_AurieModule, ScriptFunctionName, scriptPtr->m_Functions->m_ScriptFunction, funcPtr, &trampolineFunc);
+		status = MmCreateHook(g_ArSelfModule, ScriptFunctionName, scriptPtr->m_Functions->m_ScriptFunction, scriptFunctionCallbackObjectArr[numScriptCallback], &trampolineFunc);
 		if (!AurieSuccess(status))
 		{
 			g_ModuleInterface->Print(CM_RED, "Failed hooking %s with status %d", ScriptFunctionName.c_str(), status);
 			return AURIE_EXTERNAL_ERROR;
 		}
-		callbackRoutineList->callbackRoutine = funcPtr;
-		callbackRoutineList->originalFunction = (PFUNC_YYGMLScript)trampolineFunc;
+		scriptFunctionCallbackArr[numScriptCallback].callbackRoutineList.originalFunction = (PFUNC_YYGMLScript)trampolineFunc;
+		numScriptCallback++;
 	}
 	if (BeforeScriptFunctionRoutine != nullptr || AfterScriptFunctionRoutine != nullptr)
 	{
-		scriptFunctionCallbackMap[ScriptFunctionName].routineList.push_back(std::move(CallbackRoutine(BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, ModName)));
+		scriptFunctionNameCallbackMap[ScriptFunctionName]->callbackRoutineList.routineList.push_back(std::move(CallbackRoutine(BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, ModName)));
 	}
 	if (OriginalScriptFunctionRoutine != nullptr)
 	{
-		*OriginalScriptFunctionRoutine = scriptFunctionCallbackMap[ScriptFunctionName].originalFunction;
+		*OriginalScriptFunctionRoutine = scriptFunctionNameCallbackMap[ScriptFunctionName]->callbackRoutineList.originalFunction;
+	}
+	return AURIE_SUCCESS;
+}
+
+const int maxBuiltinFunctionCallbacks = 1000;
+struct BuiltinFunctionCallbackObject
+{
+	CallbackRoutineList<TRoutine> callbackRoutineList;
+
+	BuiltinFunctionCallbackObject()
+	{
+	}
+
+	BuiltinFunctionCallbackObject(CallbackRoutineList<TRoutine> callbackRoutineList) : callbackRoutineList(callbackRoutineList)
+	{
+	}
+
+	void HandleBuiltinFunctionCallback(
+		OUT RValue* Result,
+		IN CInstance* Self,
+		IN CInstance* Other,
+		IN int numArgs,
+		IN RValue* Args
+	)
+	{
+		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
+		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+		bool callFlag = false;
+		bool cancelFlag = false;
+		callOriginalFunctionFlag = false;
+		cancelOriginalFunctionFlag = false;
+		for (CallbackRoutine<TRoutine>& routine : callbackRoutineList.routineList)
+		{
+			if (routine.beforeRoutine != nullptr)
+			{
+				routine.beforeRoutine(Result, Self, Other, numArgs, Args);
+				routine.callOriginalFunctionFlag = callOriginalFunctionFlag;
+				routine.cancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+				callFlag = callFlag || callOriginalFunctionFlag;
+				cancelFlag = cancelFlag || cancelOriginalFunctionFlag;
+				callOriginalFunctionFlag = false;
+				cancelOriginalFunctionFlag = false;
+			}
+		}
+		if (callFlag && cancelFlag)
+		{
+			g_ModuleInterface->Print(CM_RED, "ERROR: A CALL AND CANCEL REQUEST WAS SENT TO THE FUNCTION %s", callbackRoutineList.name.c_str());
+			for (CallbackRoutine<TRoutine>& routine : callbackRoutineList.routineList)
+			{
+				if (routine.callOriginalFunctionFlag)
+				{
+					g_ModuleInterface->Print(CM_RED, "CALL REQUEST: %s", routine.modName.c_str());
+				}
+				if (routine.cancelOriginalFunctionFlag)
+				{
+					g_ModuleInterface->Print(CM_RED, "CANCEL REQUEST: %s", routine.modName.c_str());
+				}
+			}
+		}
+		else if (callFlag || !cancelFlag)
+		{
+			callbackRoutineList.originalFunction(Result, Self, Other, numArgs, Args);
+		}
+		for (CallbackRoutine<TRoutine>& routine : callbackRoutineList.routineList)
+		{
+			if (routine.afterRoutine != nullptr)
+			{
+				routine.afterRoutine(Result, Self, Other, numArgs, Args);
+			}
+		}
+		callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
+		cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
+	}
+} builtinFunctionCallbackArr[maxBuiltinFunctionCallbacks];
+
+template<size_t index>
+void builtinFunctionCallbackHelper(
+	OUT RValue* Result,
+	IN CInstance* Self,
+	IN CInstance* Other,
+	IN int numArgs,
+	IN RValue* Args
+)
+{
+	builtinFunctionCallbackArr[index].HandleBuiltinFunctionCallback(Result, Self, Other, numArgs, Args);
+}
+
+template<size_t... Is>
+auto MakeBuiltinFunctionCallbackArrayHelper(std::integer_sequence<size_t, Is...>)
+{
+	return std::array{ builtinFunctionCallbackHelper<Is>... };
+}
+
+template<size_t size>
+auto MakeBuiltinFunctionCallbackArray()
+{
+	return MakeBuiltinFunctionCallbackArrayHelper(std::make_index_sequence<size>{});
+}
+
+std::unordered_map<std::string, BuiltinFunctionCallbackObject*> builtinFunctionNameCallbackMap;
+auto builtinFunctionCallbackObjectArr = MakeBuiltinFunctionCallbackArray<maxBuiltinFunctionCallbacks>();
+int numBuiltinCallback = 0;
+AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
+	IN const std::string& ModName,
+	IN const std::string& BuiltinFunctionName,
+	IN TRoutine BeforeBuiltinFunctionRoutine,
+	IN TRoutine AfterBuiltinFunctionRoutine,
+	OUT TRoutine* OriginalBuiltinFunctionRoutine
+)
+{
+	AurieStatus status = AURIE_SUCCESS;
+	auto callbackList = builtinFunctionNameCallbackMap.find(BuiltinFunctionName);
+	if (callbackList == builtinFunctionNameCallbackMap.end())
+	{
+		PVOID builtinFunction = nullptr;
+		status = g_ModuleInterface->GetNamedRoutinePointer(BuiltinFunctionName.c_str(), &builtinFunction);
+		if (!AurieSuccess(status))
+		{
+			g_ModuleInterface->Print(CM_RED, "Failed obtaining function pointer for %s with status %d", BuiltinFunctionName.c_str(), status);
+			return AURIE_EXTERNAL_ERROR;
+		}
+		if (numBuiltinCallback >= maxBuiltinFunctionCallbacks)
+		{
+			g_ModuleInterface->Print(CM_RED, "Failed to register %s since the number of builtin function callbacks has exceeded %d", BuiltinFunctionName.c_str(), maxBuiltinFunctionCallbacks);
+			return AURIE_EXTERNAL_ERROR;
+		}
+		builtinFunctionNameCallbackMap[BuiltinFunctionName] = &(builtinFunctionCallbackArr[numBuiltinCallback] = BuiltinFunctionCallbackObject(CallbackRoutineList<TRoutine>(BuiltinFunctionName)));
+
+		PVOID trampolineFunc = nullptr;
+		status = MmCreateHook(g_ArSelfModule, BuiltinFunctionName, builtinFunction, builtinFunctionCallbackObjectArr[numBuiltinCallback], &trampolineFunc);
+		if (!AurieSuccess(status))
+		{
+			g_ModuleInterface->Print(CM_RED, "Failed hooking %s with status %d", BuiltinFunctionName.c_str(), status);
+			return AURIE_EXTERNAL_ERROR;
+		}
+		builtinFunctionCallbackArr[numBuiltinCallback].callbackRoutineList.originalFunction = (TRoutine)trampolineFunc;
+		numBuiltinCallback++;
+	}
+	if (BeforeBuiltinFunctionRoutine != nullptr || AfterBuiltinFunctionRoutine != nullptr)
+	{
+		builtinFunctionNameCallbackMap[BuiltinFunctionName]->callbackRoutineList.routineList.push_back(std::move(CallbackRoutine(BeforeBuiltinFunctionRoutine, AfterBuiltinFunctionRoutine, ModName)));
+	}
+	if (OriginalBuiltinFunctionRoutine != nullptr)
+	{
+		*OriginalBuiltinFunctionRoutine = builtinFunctionNameCallbackMap[BuiltinFunctionName]->callbackRoutineList.originalFunction;
 	}
 	return AURIE_SUCCESS;
 }

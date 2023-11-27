@@ -6,7 +6,6 @@ using namespace YYTK;
 
 YYTKInterface* g_ModuleInterface = nullptr;
 YYRunnerInterface g_RunnerInterface;
-AurieModule* g_AurieModule = nullptr;
 
 CallbackManagerInterface callbackManager;
 
@@ -15,7 +14,6 @@ EXPORTED AurieStatus ModulePreinitialize(
 	IN const fs::path& ModulePath
 )
 {
-	g_AurieModule = Module;
 	ObCreateInterface(Module, &callbackManager, "callbackManager");
 	return AURIE_SUCCESS;
 }

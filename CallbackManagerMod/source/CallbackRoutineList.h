@@ -22,7 +22,12 @@ struct CallbackRoutineList
 	std::vector<CallbackRoutine<RoutineType>> routineList;
 	RoutineType callbackRoutine;
 	RoutineType originalFunction;
+	std::string name;
 	CallbackRoutineList() : callbackRoutine(nullptr), originalFunction(nullptr)
+	{
+	}
+
+	CallbackRoutineList(std::string name) : callbackRoutine(nullptr), originalFunction(nullptr), name(name)
 	{
 	}
 };
