@@ -44,5 +44,11 @@
     <ClInclude Include="source\CallbackRoutineList.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="include\YYTKTypes\YYObjectBase.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\YYTKTypes\CHashMap.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

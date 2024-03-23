@@ -2,6 +2,7 @@
 #include "ModuleMain.h"
 #include <YYToolkit/shared.hpp>
 #include <array>
+#include <semaphore>
 
 using namespace Aurie;
 using namespace YYTK;
@@ -29,11 +30,22 @@ void CallbackManagerInterface::QueryVersion(
 bool callOriginalFunctionFlag = false;
 bool cancelOriginalFunctionFlag = false;
 
+std::binary_semaphore initOrigFuncSemaphore(1);
+
 std::unordered_map<int, CallbackRoutineList<CodeEvent>*> codeIndexToCallbackMap;
 std::unordered_map<std::string, CallbackRoutineList<CodeEvent>> codeEventCallbackMap;
 
+std::unordered_map<int, long long> profilerMap;
+std::unordered_map<int, const char*> codeIndexToName;
+long long curTime = 0;
+long long totTime = 0;
+
 void CodeCallback(FWCodeEvent& CodeContext)
 {
+	if (ENABLEPROFILER)
+	{
+		curTime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+	}
 	std::tuple<CInstance*, CInstance*, CCode*, int, RValue*> args = CodeContext.Arguments();
 
 	CInstance*	Self	= std::get<0>(args);
@@ -50,6 +62,10 @@ void CodeCallback(FWCodeEvent& CodeContext)
 	}
 	else
 	{
+		if (ENABLEPROFILER)
+		{
+			codeIndexToName[Code->m_CodeIndex] = Code->GetName();
+		}
 		if (codeEventCallbackMap.find(Code->GetName()) == codeEventCallbackMap.end())
 		{
 			callbackRoutineList = &(codeEventCallbackMap[Code->GetName()] = CallbackRoutineList<CodeEvent>());
@@ -58,6 +74,7 @@ void CodeCallback(FWCodeEvent& CodeContext)
 		{
 			callbackRoutineList = &codeEventCallbackMap[Code->GetName()];
 		}
+		codeIndexToCallbackMap[Code->m_CodeIndex] = callbackRoutineList;
 	}
 
 	bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
@@ -112,6 +129,16 @@ void CodeCallback(FWCodeEvent& CodeContext)
 	}
 	callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
 	cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
+	if (ENABLEPROFILER)
+	{
+		long long timeElapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() - curTime;
+		if (profilerMap.count(Code->m_CodeIndex) == 0)
+		{
+			profilerMap[Code->m_CodeIndex] = 0;
+		}
+		profilerMap[Code->m_CodeIndex] += timeElapsed;
+		totTime += timeElapsed;
+	}
 }
 
 bool hasCreatedCodeEventCallback = false;
@@ -161,16 +188,28 @@ struct ScriptFunctionCallbackObject
 	{
 	}
 
-	RValue* HandleScriptFunctionCallback(
+	RValue& HandleScriptFunctionCallback(
 		IN CInstance* Self,
 		IN CInstance* Other,
-		OUT RValue* ReturnValue,
+		OUT RValue& ReturnValue,
 		IN int ArgumentCount,
 		IN RValue** Arguments
 	)
 	{
+		// Sometimes the hook might happen before the originalFunction is set. Just wait until it is set in the register callback
+		if (callbackRoutineList.originalFunction == nullptr)
+		{
+			initOrigFuncSemaphore.acquire();
+			initOrigFuncSemaphore.release();
+			if (callbackRoutineList.originalFunction == nullptr)
+			{
+				g_ModuleInterface->Print(CM_RED, "Still couldn't get the original function\n");
+				return ReturnValue;
+			}
+		}
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+//		printf("script function callback %d %d %s\n", callOriginalFunctionFlag, cancelOriginalFunctionFlag, callbackRoutineList.name.c_str());
 		bool callFlag = false;
 		bool cancelFlag = false;
 		callOriginalFunctionFlag = false;
@@ -188,7 +227,6 @@ struct ScriptFunctionCallbackObject
 				cancelOriginalFunctionFlag = false;
 			}
 		}
-		RValue* ret = ReturnValue;
 		if (callFlag && cancelFlag)
 		{
 			g_ModuleInterface->Print(CM_RED, "ERROR: A CALL AND CANCEL REQUEST WAS SENT TO THE FUNCTION %s", callbackRoutineList.name.c_str());
@@ -206,7 +244,7 @@ struct ScriptFunctionCallbackObject
 		}
 		else if (callFlag || !cancelFlag)
 		{
-			ret = callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
+			ReturnValue = callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
 		}
 		for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList.routineList)
 		{
@@ -217,15 +255,15 @@ struct ScriptFunctionCallbackObject
 		}
 		callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
 		cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
-		return ret;
+		return ReturnValue;
 	}
 } scriptFunctionCallbackArr[maxScriptFunctionCallbacks];
 
 template<size_t index>
-RValue* scriptFunctionCallbackHelper(
+RValue& scriptFunctionCallbackHelper(
 	IN CInstance* Self,
 	IN CInstance* Other,
-	OUT RValue* ReturnValue,
+	OUT RValue& ReturnValue,
 	IN int ArgumentCount,
 	IN RValue** Arguments
 )
@@ -276,13 +314,17 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 		scriptFunctionNameCallbackMap[ScriptFunctionName] = &(scriptFunctionCallbackArr[numScriptCallback] = ScriptFunctionCallbackObject(CallbackRoutineList<PFUNC_YYGMLScript>(ScriptFunctionName)));
 
 		PVOID trampolineFunc = nullptr;
+		initOrigFuncSemaphore.acquire();
 		status = MmCreateHook(g_ArSelfModule, ScriptFunctionName, scriptPtr->m_Functions->m_ScriptFunction, scriptFunctionCallbackObjectArr[numScriptCallback], &trampolineFunc);
 		if (!AurieSuccess(status))
 		{
 			g_ModuleInterface->Print(CM_RED, "Failed hooking %s with status %d", ScriptFunctionName.c_str(), status);
+			initOrigFuncSemaphore.release();
 			return AURIE_EXTERNAL_ERROR;
 		}
 		scriptFunctionCallbackArr[numScriptCallback].callbackRoutineList.originalFunction = (PFUNC_YYGMLScript)trampolineFunc;
+		initOrigFuncSemaphore.release();
+
 		numScriptCallback++;
 	}
 	if (BeforeScriptFunctionRoutine != nullptr || AfterScriptFunctionRoutine != nullptr)
@@ -317,6 +359,17 @@ struct BuiltinFunctionCallbackObject
 		IN RValue* Args
 	)
 	{
+		// Sometimes the hook might happen before the originalFunction is set. Just wait until it is set in the register callback
+		if (callbackRoutineList.originalFunction == nullptr)
+		{
+			initOrigFuncSemaphore.acquire();
+			initOrigFuncSemaphore.release();
+			if (callbackRoutineList.originalFunction == nullptr)
+			{
+				g_ModuleInterface->Print(CM_RED, "Still couldn't get the original function\n");
+				return;
+			}
+		}
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
 		bool callFlag = false;
@@ -421,13 +474,16 @@ AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
 		builtinFunctionNameCallbackMap[BuiltinFunctionName] = &(builtinFunctionCallbackArr[numBuiltinCallback] = BuiltinFunctionCallbackObject(CallbackRoutineList<TRoutine>(BuiltinFunctionName)));
 
 		PVOID trampolineFunc = nullptr;
+		initOrigFuncSemaphore.acquire();
 		status = MmCreateHook(g_ArSelfModule, BuiltinFunctionName, builtinFunction, builtinFunctionCallbackObjectArr[numBuiltinCallback], &trampolineFunc);
 		if (!AurieSuccess(status))
 		{
 			g_ModuleInterface->Print(CM_RED, "Failed hooking %s with status %d", BuiltinFunctionName.c_str(), status);
+			initOrigFuncSemaphore.release();
 			return AURIE_EXTERNAL_ERROR;
 		}
 		builtinFunctionCallbackArr[numBuiltinCallback].callbackRoutineList.originalFunction = (TRoutine)trampolineFunc;
+		initOrigFuncSemaphore.release();
 		numBuiltinCallback++;
 	}
 	if (BeforeBuiltinFunctionRoutine != nullptr || AfterBuiltinFunctionRoutine != nullptr)
