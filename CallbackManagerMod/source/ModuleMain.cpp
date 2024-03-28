@@ -4,6 +4,7 @@
 #include <fstream>
 #include "YYTKTypes/YYObjectBase.h"
 #include "YYTKTypes/CHashMap.h"
+#include <stacktrace>
 using namespace Aurie;
 using namespace YYTK;
 
@@ -67,6 +68,22 @@ void FrameCallback(FWFrame& FrameContext)
 	profilerMap.clear();
 }
 
+using YYErrorFunc = void (*)(const char* error, ...);
+YYErrorFunc origYYErrorFunction = nullptr;
+void YYErrorFunction(const char* error, ...)
+{
+	va_list args;
+	char outputBuffer[1000];
+	va_start(args, error);
+	vsprintf_s(outputBuffer, error, args);
+	va_end(args);
+	std::string outputString = outputBuffer;
+	outputString.append("\n");
+	outputString.append(to_string(std::stacktrace::current()));
+	outputString.append("\n");
+	origYYErrorFunction(outputString.c_str());
+}
+
 EXPORTED AurieStatus ModulePreinitialize(
 	IN AurieModule* Module,
 	IN const fs::path& ModulePath
@@ -114,6 +131,10 @@ EXPORTED AurieStatus ModuleInitialize(
 	}
 
 	g_RunnerInterface = g_ModuleInterface->GetRunnerInterface();
+
+	PVOID trampolineFunc = nullptr;
+	MmCreateHook(g_ArSelfModule, "YYError", g_RunnerInterface.YYError, YYErrorFunction, &trampolineFunc);
+	origYYErrorFunction = (YYErrorFunc)trampolineFunc;
 
 	return AURIE_SUCCESS;
 }
