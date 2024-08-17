@@ -5,6 +5,8 @@
 #include "YYTKTypes/YYObjectBase.h"
 #include "YYTKTypes/CHashMap.h"
 #include <stacktrace>
+#include <chrono>
+
 using namespace Aurie;
 using namespace YYTK;
 
@@ -14,6 +16,7 @@ CInstance* globalInstance = nullptr;
 
 CallbackManagerInterface callbackManager;
 std::ofstream outFile;
+std::ofstream outputLog;
 int FrameNumber = 0;
 bool hasObtainedTimeVar = false;
 RValue timeVar;
@@ -81,6 +84,7 @@ void YYErrorFunction(const char* error, ...)
 	outputString.append("\n");
 	outputString.append(to_string(std::stacktrace::current()));
 	outputString.append("\n");
+	callbackManager.LogToFile("", outputString.c_str());
 	origYYErrorFunction(outputString.c_str());
 }
 
@@ -89,6 +93,9 @@ EXPORTED AurieStatus ModulePreinitialize(
 	IN const fs::path& ModulePath
 )
 {
+	CreateDirectory(L"Logs", NULL);
+	auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+	outputLog.open("Logs/" + std::format("{:%Y_%m_%d_%H_%M}_{:.2}", time, std::format("{:%S}", time)) + ".log");
 	ObCreateInterface(Module, &callbackManager, "callbackManager");
 	return AURIE_SUCCESS;
 }

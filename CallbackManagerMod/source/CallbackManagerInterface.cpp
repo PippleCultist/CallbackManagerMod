@@ -3,9 +3,13 @@
 #include <YYToolkit/shared.hpp>
 #include <array>
 #include <semaphore>
+#include <chrono>
+#include <fstream>
 
 using namespace Aurie;
 using namespace YYTK;
+
+extern std::ofstream outputLog;
 
 AurieStatus CallbackManagerInterface::Create()
 {
@@ -494,6 +498,23 @@ AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
 	{
 		*OriginalBuiltinFunctionRoutine = builtinFunctionNameCallbackMap[BuiltinFunctionName]->callbackRoutineList.originalFunction;
 	}
+	return AURIE_SUCCESS;
+}
+
+AurieStatus CallbackManagerInterface::LogToFile(
+	IN const std::string& ModName,
+	IN const char* LogFormat,
+	...
+)
+{
+	va_list args;
+	char outputBuffer[5000];
+	va_start(args, LogFormat);
+	vsprintf_s(outputBuffer, LogFormat, args);
+	va_end(args);
+	auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+	std::string outputStr = outputBuffer;
+	outputLog << std::format("{:%F %T} {} - {}\n", time, ModName, outputStr);
 	return AURIE_SUCCESS;
 }
 

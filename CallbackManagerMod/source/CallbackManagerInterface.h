@@ -54,6 +54,15 @@ struct CallbackManagerInterface : AurieInterfaceBase
 	);
 
 	/*
+	* Call this to log to the Logs file in the game's directory
+	*/
+	virtual AurieStatus LogToFile(
+		IN const std::string& ModName,
+		IN const char* LogFormat,
+		...
+	);
+
+	/*
 	* Will only have an effect inside the before routine that was registered with the callback.
 	* Tells the callback manager that a mod wants the original function to be called.
 	* WARNING: WILL HAVE UNDEFINED BEHAVIOR IF BOTH CALL AND CANCEL OCCUR
