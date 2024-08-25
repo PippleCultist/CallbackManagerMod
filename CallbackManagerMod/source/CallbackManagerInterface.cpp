@@ -43,6 +43,7 @@ std::unordered_map<int, long long> profilerMap;
 std::unordered_map<int, const char*> codeIndexToName;
 long long curTime = 0;
 long long totTime = 0;
+CallbackRoutineList<CodeEvent>* codeEventCallbackRoutineList = nullptr;
 
 void CodeCallback(FWCodeEvent& CodeContext)
 {
@@ -72,7 +73,7 @@ void CodeCallback(FWCodeEvent& CodeContext)
 		}
 		if (codeEventCallbackMap.find(Code->GetName()) == codeEventCallbackMap.end())
 		{
-			callbackRoutineList = &(codeEventCallbackMap[Code->GetName()] = CallbackRoutineList<CodeEvent>());
+			callbackRoutineList = &(codeEventCallbackMap[Code->GetName()] = CallbackRoutineList<CodeEvent>(Code->GetName(), static_cast<int>(codeEventCallbackMap.size())));
 		}
 		else
 		{
@@ -80,6 +81,8 @@ void CodeCallback(FWCodeEvent& CodeContext)
 		}
 		codeIndexToCallbackMap[Code->m_CodeIndex] = callbackRoutineList;
 	}
+
+	codeEventCallbackRoutineList = callbackRoutineList;
 
 	bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 	bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
@@ -170,7 +173,7 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	auto codeEventCallback = codeEventCallbackMap.find(CodeEventName);
 	if (codeEventCallback == codeEventCallbackMap.end())
 	{
-		codeEventCallbackMap[CodeEventName] = CallbackRoutineList<CodeEvent>();
+		codeEventCallbackMap[CodeEventName] = CallbackRoutineList<CodeEvent>(CodeEventName, static_cast<int>(codeEventCallbackMap.size()));
 	}
 	if (BeforeCodeEventRoutine != nullptr || AfterCodeEventRoutine != nullptr)
 	{
@@ -178,6 +181,29 @@ AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
 	}
 	return AURIE_SUCCESS;
 }
+
+AurieStatus CallbackManagerInterface::RegisterCodeEventCallback(
+	IN const std::string& ModName,
+	IN const std::string& CodeEventName,
+	IN CodeEvent BeforeCodeEventRoutine,
+	IN CodeEvent AfterCodeEventRoutine,
+	OUT int& CodeEventIndex
+)
+{
+	auto status = RegisterCodeEventCallback(ModName, CodeEventName, BeforeCodeEventRoutine, AfterCodeEventRoutine);
+	auto find = codeEventCallbackMap.find(CodeEventName);
+	if (find == codeEventCallbackMap.end())
+	{
+		CodeEventIndex = -1;
+	}
+	else
+	{
+		CodeEventIndex = find->second.index;
+	}
+	return status;
+}
+
+CallbackRoutineList<PFUNC_YYGMLScript>* scriptFunctionCallbackRoutineList = nullptr;
 
 const int maxScriptFunctionCallbacks = 1000;
 struct ScriptFunctionCallbackObject
@@ -211,6 +237,7 @@ struct ScriptFunctionCallbackObject
 				return ReturnValue;
 			}
 		}
+		scriptFunctionCallbackRoutineList = &callbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
 //		printf("script function callback %d %d %s\n", callOriginalFunctionFlag, cancelOriginalFunctionFlag, callbackRoutineList.name.c_str());
@@ -315,7 +342,7 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 			g_ModuleInterface->Print(CM_RED, "Failed to register %s since the number of script function callbacks has exceeded %d", ScriptFunctionName.c_str(), maxScriptFunctionCallbacks);
 			return AURIE_EXTERNAL_ERROR;
 		}
-		scriptFunctionNameCallbackMap[ScriptFunctionName] = &(scriptFunctionCallbackArr[numScriptCallback] = ScriptFunctionCallbackObject(CallbackRoutineList<PFUNC_YYGMLScript>(ScriptFunctionName)));
+		scriptFunctionNameCallbackMap[ScriptFunctionName] = &(scriptFunctionCallbackArr[numScriptCallback] = ScriptFunctionCallbackObject(CallbackRoutineList<PFUNC_YYGMLScript>(ScriptFunctionName, numScriptCallback)));
 
 		PVOID trampolineFunc = nullptr;
 		initOrigFuncSemaphore.acquire();
@@ -341,6 +368,30 @@ AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
 	}
 	return AURIE_SUCCESS;
 }
+
+AurieStatus CallbackManagerInterface::RegisterScriptFunctionCallback(
+	IN const std::string& ModName,
+	IN const std::string& ScriptFunctionName,
+	IN PFUNC_YYGMLScript BeforeScriptFunctionRoutine,
+	IN PFUNC_YYGMLScript AfterScriptFunctionRoutine,
+	OUT PFUNC_YYGMLScript* OriginalScriptFunctionRoutine,
+	OUT int& ScriptFunctionIndex
+)
+{
+	auto status = RegisterScriptFunctionCallback(ModName, ScriptFunctionName, BeforeScriptFunctionRoutine, AfterScriptFunctionRoutine, OriginalScriptFunctionRoutine);
+	auto find = scriptFunctionNameCallbackMap.find(ScriptFunctionName);
+	if (find == scriptFunctionNameCallbackMap.end())
+	{
+		ScriptFunctionIndex = -1;
+	}
+	else
+	{
+		ScriptFunctionIndex = find->second->callbackRoutineList.index;
+	}
+	return status;
+}
+
+CallbackRoutineList<TRoutine>* builtinFunctionCallbackRoutineList = nullptr;
 
 const int maxBuiltinFunctionCallbacks = 1000;
 struct BuiltinFunctionCallbackObject
@@ -374,6 +425,7 @@ struct BuiltinFunctionCallbackObject
 				return;
 			}
 		}
+		builtinFunctionCallbackRoutineList = &callbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
 		bool callFlag = false;
@@ -475,7 +527,7 @@ AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
 			g_ModuleInterface->Print(CM_RED, "Failed to register %s since the number of builtin function callbacks has exceeded %d", BuiltinFunctionName.c_str(), maxBuiltinFunctionCallbacks);
 			return AURIE_EXTERNAL_ERROR;
 		}
-		builtinFunctionNameCallbackMap[BuiltinFunctionName] = &(builtinFunctionCallbackArr[numBuiltinCallback] = BuiltinFunctionCallbackObject(CallbackRoutineList<TRoutine>(BuiltinFunctionName)));
+		builtinFunctionNameCallbackMap[BuiltinFunctionName] = &(builtinFunctionCallbackArr[numBuiltinCallback] = BuiltinFunctionCallbackObject(CallbackRoutineList<TRoutine>(BuiltinFunctionName, numBuiltinCallback)));
 
 		PVOID trampolineFunc = nullptr;
 		initOrigFuncSemaphore.acquire();
@@ -498,6 +550,70 @@ AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
 	{
 		*OriginalBuiltinFunctionRoutine = builtinFunctionNameCallbackMap[BuiltinFunctionName]->callbackRoutineList.originalFunction;
 	}
+	return AURIE_SUCCESS;
+}
+
+AurieStatus CallbackManagerInterface::RegisterBuiltinFunctionCallback(
+	IN const std::string& ModName,
+	IN const std::string& BuiltinFunctionName,
+	IN TRoutine BeforeBuiltinFunctionRoutine,
+	IN TRoutine AfterBuiltinFunctionRoutine,
+	OUT TRoutine* OriginalBuiltinFunctionRoutine,
+	OUT int& BuiltinFunctionIndex
+)
+{
+	auto status = RegisterBuiltinFunctionCallback(ModName, BuiltinFunctionName, BeforeBuiltinFunctionRoutine, AfterBuiltinFunctionRoutine, OriginalBuiltinFunctionRoutine);
+	auto find = builtinFunctionNameCallbackMap.find(BuiltinFunctionName);
+	if (find == builtinFunctionNameCallbackMap.end())
+	{
+		BuiltinFunctionIndex = -1;
+	}
+	else
+	{
+		BuiltinFunctionIndex = find->second->callbackRoutineList.index;
+	}
+	return status;
+}
+
+AurieStatus CallbackManagerInterface::GetCurrentCodeEventInfo(
+	IN const std::string& ModName,
+	OUT const char** CodeEventName,
+	OUT int& CodeEventIndex
+)
+{
+	if (CodeEventName != nullptr)
+	{
+		*CodeEventName = codeEventCallbackRoutineList->name.c_str();
+	}
+	CodeEventIndex = codeEventCallbackRoutineList->index;
+	return AURIE_SUCCESS;
+}
+
+AurieStatus CallbackManagerInterface::GetCurrentScriptFunctionInfo(
+	IN const std::string& ModName,
+	OUT const char** ScriptFunctionName,
+	OUT int& ScriptFunctionIndex
+)
+{
+	if (ScriptFunctionName != nullptr)
+	{
+		*ScriptFunctionName = scriptFunctionCallbackRoutineList->name.c_str();
+	}
+	ScriptFunctionIndex = scriptFunctionCallbackRoutineList->index;
+	return AURIE_SUCCESS;
+}
+
+AurieStatus CallbackManagerInterface::GetCurrentBuiltinFunctionInfo(
+	IN const std::string& ModName,
+	OUT const char** BuiltinFunctionName,
+	OUT int& BuiltinFunctionIndex
+)
+{
+	if (BuiltinFunctionName != nullptr)
+	{
+		*BuiltinFunctionName = builtinFunctionCallbackRoutineList->name.c_str();
+	}
+	BuiltinFunctionIndex = builtinFunctionCallbackRoutineList->index;
 	return AURIE_SUCCESS;
 }
 

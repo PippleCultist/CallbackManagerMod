@@ -23,11 +23,13 @@ struct CallbackRoutineList
 	RoutineType callbackRoutine;
 	RoutineType originalFunction;
 	std::string name;
-	CallbackRoutineList() : callbackRoutine(nullptr), originalFunction(nullptr)
+	int index;
+
+	CallbackRoutineList() : callbackRoutine(nullptr), originalFunction(nullptr), index(0)
 	{
 	}
 
-	CallbackRoutineList(std::string name) : callbackRoutine(nullptr), originalFunction(nullptr), name(name)
+	CallbackRoutineList(std::string name, int index) : callbackRoutine(nullptr), originalFunction(nullptr), name(name), index(index)
 	{
 	}
 };
