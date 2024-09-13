@@ -5,6 +5,8 @@
 #include <semaphore>
 #include <chrono>
 #include <fstream>
+#include <windows.h>
+#include <VersionHelpers.h>
 
 using namespace Aurie;
 using namespace YYTK;
@@ -628,9 +630,18 @@ AurieStatus CallbackManagerInterface::LogToFile(
 	va_start(args, LogFormat);
 	vsprintf_s(outputBuffer, LogFormat, args);
 	va_end(args);
-	auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
 	std::string outputStr = outputBuffer;
-	outputLog << std::format("{:%F %T} {} - {}\n", time, ModName, outputStr);
+	if (IsWindows10OrGreater())
+	{
+		auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+		outputLog << std::format("{:%F %T} {} - {}\n", time, ModName, outputStr);
+	}
+	else
+	{
+		auto time = std::chrono::system_clock::now();
+		outputLog << std::format("{} {} - {}\n", time.time_since_epoch(), ModName, outputStr);
+	}
+	
 	outputLog.flush();
 	return AURIE_SUCCESS;
 }

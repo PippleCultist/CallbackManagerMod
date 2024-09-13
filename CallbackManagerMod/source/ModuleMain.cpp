@@ -6,6 +6,8 @@
 #include "YYTKTypes/CHashMap.h"
 #include <stacktrace>
 #include <chrono>
+#include <windows.h>
+#include <VersionHelpers.h>
 
 using namespace Aurie;
 using namespace YYTK;
@@ -94,8 +96,16 @@ EXPORTED AurieStatus ModulePreinitialize(
 )
 {
 	CreateDirectory(L"Logs", NULL);
-	auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
-	outputLog.open("Logs/" + std::format("{:%Y_%m_%d_%H_%M}_{:.2}", time, std::format("{:%S}", time)) + ".log");
+	if (IsWindows10OrGreater())
+	{
+		auto time = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+		outputLog.open("Logs/" + std::format("{:%Y_%m_%d_%H_%M}_{:.2}", time, std::format("{:%S}", time)) + ".log");
+	}
+	else
+	{
+		auto time = std::chrono::system_clock::now();
+		outputLog.open("Logs/" + std::format("{}.log", time.time_since_epoch()));
+	}
 	ObCreateInterface(Module, &callbackManager, "callbackManager");
 	return AURIE_SUCCESS;
 }
