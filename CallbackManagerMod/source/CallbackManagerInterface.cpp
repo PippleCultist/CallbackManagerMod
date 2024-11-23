@@ -624,14 +624,19 @@ AurieStatus CallbackManagerInterface::LogToFile(
 )
 {
 	va_list args;
-	char outputBuffer[5000];
 	va_start(args, LogFormat);
-	vsprintf_s(outputBuffer, LogFormat, args);
+	va_list copyArgs;
+	va_copy(copyArgs, args);
+	int size = vsnprintf(NULL, 0, LogFormat, copyArgs);
+	va_end(copyArgs);
+	char* outputBuffer = new char[size + 1];
+	vsprintf_s(outputBuffer, size + 1, LogFormat, args);
 	va_end(args);
 	std::string outputStr = outputBuffer;
 	auto time = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 	outputLog << std::format("{:%Y_%m_%d_%H_%M_%S} {} - {}\n", time, ModName, outputStr);
 	outputLog.flush();
+	delete[] outputBuffer;
 	return AURIE_SUCCESS;
 }
 

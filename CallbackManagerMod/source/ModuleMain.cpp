@@ -15,7 +15,6 @@ YYRunnerInterface g_RunnerInterface;
 CInstance* globalInstance = nullptr;
 
 CallbackManagerInterface callbackManager;
-std::ofstream outFile;
 std::ofstream outputLog;
 int FrameNumber = 0;
 bool hasObtainedTimeVar = false;
@@ -26,7 +25,7 @@ void FrameCallback(FWFrame& FrameContext)
 	UNREFERENCED_PARAMETER(FrameContext);
 	if (totTime >= 12000000)
 	{
-		outFile << "Frame Number: " << FrameNumber << " totTime: " << totTime << "\n";
+		callbackManager.LogToFile("CallbackManager", "Frame Number: %d totTime: %lld", FrameNumber, totTime);
 		if (!hasObtainedTimeVar)
 		{
 			if (g_ModuleInterface->CallBuiltin("variable_global_exists", { RValue("time") }).AsBool())
@@ -46,7 +45,7 @@ void FrameCallback(FWFrame& FrameContext)
 				static_cast<int>(timeVar[1].m_Real),
 				static_cast<int>(timeVar[2].m_Real)
 			);
-			outFile << buffer;
+			callbackManager.LogToFile("CallbackManager", "%s", buffer);
 		}
 		std::vector<std::pair<long long, int>> sortVec;
 		for (auto& it : profilerMap)
@@ -62,7 +61,7 @@ void FrameCallback(FWFrame& FrameContext)
 				break;
 			}
 			cumulativeTime += it.first;
-			outFile << codeIndexToName[it.second] << " " << it.first << "\n";
+			callbackManager.LogToFile("CallbackManager", "%s %lld", codeIndexToName[it.second], it.first);
 		}
 	}
 
@@ -134,7 +133,6 @@ EXPORTED AurieStatus ModuleInitialize(
 		{
 			g_ModuleInterface->Print(CM_RED, "Failed to register frame callback");
 		}
-		outFile.open("profilerResults.txt");
 		g_ModuleInterface->GetGlobalInstance(&globalInstance);
 	}
 
@@ -143,6 +141,8 @@ EXPORTED AurieStatus ModuleInitialize(
 	PVOID trampolineFunc = nullptr;
 	MmCreateHook(g_ArSelfModule, "YYError", g_RunnerInterface.YYError, YYErrorFunction, &trampolineFunc);
 	origYYErrorFunction = (YYErrorFunc)trampolineFunc;
+
+	callbackManager.LogToFile("CallbackManager", "Finished initialization");
 
 	return AURIE_SUCCESS;
 }
