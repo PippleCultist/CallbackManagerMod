@@ -75,9 +75,13 @@ YYErrorFunc origYYErrorFunction = nullptr;
 void YYErrorFunction(const char* error, ...)
 {
 	va_list args;
-	char outputBuffer[1000];
 	va_start(args, error);
-	vsprintf_s(outputBuffer, error, args);
+	va_list copyArgs;
+	va_copy(copyArgs, args);
+	int size = vsnprintf(NULL, 0, error, copyArgs);
+	va_end(copyArgs);
+	char* outputBuffer = new char[size + 1];
+	vsprintf_s(outputBuffer, size + 1, error, args);
 	va_end(args);
 	std::string outputString = outputBuffer;
 	outputString.append("\n");

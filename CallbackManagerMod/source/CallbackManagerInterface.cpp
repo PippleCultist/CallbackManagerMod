@@ -237,9 +237,10 @@ struct ScriptFunctionCallbackObject
 				return ReturnValue;
 			}
 		}
-		scriptFunctionCallbackRoutineList = &callbackRoutineList;
+		auto prevScriptFunctionCallbackRoutineList = scriptFunctionCallbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+		scriptFunctionCallbackRoutineList = &callbackRoutineList;
 //		printf("script function callback %d %d %s\n", callOriginalFunctionFlag, cancelOriginalFunctionFlag, callbackRoutineList.name.c_str());
 		bool callFlag = false;
 		bool cancelFlag = false;
@@ -284,6 +285,7 @@ struct ScriptFunctionCallbackObject
 				routine.afterRoutine(Self, Other, ReturnValue, ArgumentCount, Arguments);
 			}
 		}
+		scriptFunctionCallbackRoutineList = prevScriptFunctionCallbackRoutineList;
 		callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
 		cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
 		return ReturnValue;
@@ -425,9 +427,10 @@ struct BuiltinFunctionCallbackObject
 				return;
 			}
 		}
-		builtinFunctionCallbackRoutineList = &callbackRoutineList;
+		auto prevBuiltinFunctionCallbackRoutineList = builtinFunctionCallbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
 		bool prevCancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
+		builtinFunctionCallbackRoutineList = &callbackRoutineList;
 		bool callFlag = false;
 		bool cancelFlag = false;
 		callOriginalFunctionFlag = false;
@@ -471,6 +474,7 @@ struct BuiltinFunctionCallbackObject
 				routine.afterRoutine(Result, Self, Other, numArgs, Args);
 			}
 		}
+		builtinFunctionCallbackRoutineList = prevBuiltinFunctionCallbackRoutineList;
 		callOriginalFunctionFlag = prevCallOriginalFunctionFlag;
 		cancelOriginalFunctionFlag = prevCancelOriginalFunctionFlag;
 	}
