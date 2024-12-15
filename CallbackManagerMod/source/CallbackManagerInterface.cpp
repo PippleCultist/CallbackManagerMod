@@ -43,6 +43,7 @@ std::unordered_map<int, long long> profilerMap;
 std::unordered_map<int, const char*> codeIndexToName;
 long long curTime = 0;
 long long totTime = 0;
+int disableCallbackCount = 0;
 CallbackRoutineList<CodeEvent>* codeEventCallbackRoutineList = nullptr;
 
 void CodeCallback(FWCodeEvent& CodeContext)
@@ -80,6 +81,12 @@ void CodeCallback(FWCodeEvent& CodeContext)
 			callbackRoutineList = &codeEventCallbackMap[Code->GetName()];
 		}
 		codeIndexToCallbackMap[Code->m_CodeIndex] = callbackRoutineList;
+	}
+
+	if (disableCallbackCount > 0)
+	{
+		CodeContext.Call();
+		return;
 	}
 
 	codeEventCallbackRoutineList = callbackRoutineList;
@@ -236,6 +243,10 @@ struct ScriptFunctionCallbackObject
 				g_ModuleInterface->Print(CM_RED, "Still couldn't get the original function\n");
 				return ReturnValue;
 			}
+		}
+		if (disableCallbackCount > 0)
+		{
+			return callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
 		}
 		auto prevScriptFunctionCallbackRoutineList = scriptFunctionCallbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
@@ -426,6 +437,11 @@ struct BuiltinFunctionCallbackObject
 				g_ModuleInterface->Print(CM_RED, "Still couldn't get the original function\n");
 				return;
 			}
+		}
+		if (disableCallbackCount > 0)
+		{
+			callbackRoutineList.originalFunction(Result, Self, Other, numArgs, Args);
+			return;
 		}
 		auto prevBuiltinFunctionCallbackRoutineList = builtinFunctionCallbackRoutineList;
 		bool prevCallOriginalFunctionFlag = callOriginalFunctionFlag;
@@ -619,6 +635,20 @@ AurieStatus CallbackManagerInterface::GetCurrentBuiltinFunctionInfo(
 	}
 	BuiltinFunctionIndex = builtinFunctionCallbackRoutineList->index;
 	return AURIE_SUCCESS;
+}
+
+void CallbackManagerInterface::PreInitDisableCallback()
+{
+	disableCallbackCount++;
+}
+
+void CallbackManagerInterface::InitEnableCallback()
+{
+	disableCallbackCount--;
+	if (disableCallbackCount < 0)
+	{
+		LogToFile("", "ERROR: MORE ENABLE CALLBACK HAS BEEN CALLED THAN DISABLE CALLBACK");
+	}
 }
 
 AurieStatus CallbackManagerInterface::LogToFile(
