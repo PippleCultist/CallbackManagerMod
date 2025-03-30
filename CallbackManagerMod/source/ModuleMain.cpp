@@ -1,9 +1,7 @@
-#include <YYToolkit/shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include "CallbackManagerInterface.h"
 #include "ModuleMain.h"
 #include <fstream>
-#include "YYTKTypes/YYObjectBase.h"
-#include "YYTKTypes/CHashMap.h"
 #include <stacktrace>
 #include <chrono>
 
@@ -25,10 +23,10 @@ void FrameCallback(FWFrame& FrameContext)
 	UNREFERENCED_PARAMETER(FrameContext);
 	if (totTime >= 12000000)
 	{
-		callbackManager.LogToFile("CallbackManager", "Frame Number: %d totTime: %lld", FrameNumber, totTime);
+		callbackManager.LogToFile(MODNAME, "Frame Number: %d totTime: %lld", FrameNumber, totTime);
 		if (!hasObtainedTimeVar)
 		{
-			if (g_ModuleInterface->CallBuiltin("variable_global_exists", { RValue("time") }).AsBool())
+			if (g_ModuleInterface->CallBuiltin("variable_global_exists", { RValue("time") }).ToBoolean())
 			{
 				timeVar = g_ModuleInterface->CallBuiltin("variable_global_get", { RValue("time") });
 				hasObtainedTimeVar = true;
@@ -45,7 +43,7 @@ void FrameCallback(FWFrame& FrameContext)
 				static_cast<int>(timeVar[1].m_Real),
 				static_cast<int>(timeVar[2].m_Real)
 			);
-			callbackManager.LogToFile("CallbackManager", "%s", buffer);
+			callbackManager.LogToFile(MODNAME, "%s", buffer);
 		}
 		std::vector<std::pair<long long, int>> sortVec;
 		for (auto& it : profilerMap)
@@ -61,7 +59,7 @@ void FrameCallback(FWFrame& FrameContext)
 				break;
 			}
 			cumulativeTime += it.first;
-			callbackManager.LogToFile("CallbackManager", "%s %lld", codeIndexToName[it.second], it.first);
+			callbackManager.LogToFile(MODNAME, "%s %lld", codeIndexToName[it.second], it.first);
 		}
 	}
 
@@ -87,7 +85,7 @@ void YYErrorFunction(const char* error, ...)
 	outputString.append("\n");
 	outputString.append(to_string(std::stacktrace::current()));
 	outputString.append("\n");
-	callbackManager.LogToFile("", outputString.c_str());
+	callbackManager.LogToFile(MODNAME, outputString.c_str());
 	origYYErrorFunction(outputString.c_str());
 }
 
@@ -146,7 +144,7 @@ EXPORTED AurieStatus ModuleInitialize(
 	MmCreateHook(g_ArSelfModule, "YYError", g_RunnerInterface.YYError, YYErrorFunction, &trampolineFunc);
 	origYYErrorFunction = (YYErrorFunc)trampolineFunc;
 
-	callbackManager.LogToFile("CallbackManager", "Finished initialization");
+	callbackManager.LogToFile(MODNAME, "Finished initialization");
 
 	return AURIE_SUCCESS;
 }

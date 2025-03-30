@@ -1,5 +1,5 @@
 #pragma once
-#include <YYToolkit/Shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include <vector>
 
 template <typename RoutineType>

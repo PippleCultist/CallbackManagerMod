@@ -1,6 +1,6 @@
 #include "CallbackManagerInterface.h"
 #include "ModuleMain.h"
-#include <YYToolkit/shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include <array>
 #include <semaphore>
 #include <chrono>
@@ -287,7 +287,7 @@ struct ScriptFunctionCallbackObject
 		}
 		else if (callFlag || !cancelFlag)
 		{
-			ReturnValue = callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
+			callbackRoutineList.originalFunction(Self, Other, ReturnValue, ArgumentCount, Arguments);
 		}
 		for (CallbackRoutine<PFUNC_YYGMLScript>& routine : callbackRoutineList.routineList)
 		{
@@ -420,11 +420,11 @@ struct BuiltinFunctionCallbackObject
 	}
 
 	void HandleBuiltinFunctionCallback(
-		OUT RValue* Result,
+		OUT RValue& Result,
 		IN CInstance* Self,
 		IN CInstance* Other,
-		IN int numArgs,
-		IN RValue* Args
+		IN int ArgumentCount,
+		IN RValue Arguments[]
 	)
 	{
 		// Sometimes the hook might happen before the originalFunction is set. Just wait until it is set in the register callback
@@ -440,7 +440,7 @@ struct BuiltinFunctionCallbackObject
 		}
 		if (disableCallbackCount > 0)
 		{
-			callbackRoutineList.originalFunction(Result, Self, Other, numArgs, Args);
+			callbackRoutineList.originalFunction(Result, Self, Other, ArgumentCount, Arguments);
 			return;
 		}
 		auto prevBuiltinFunctionCallbackRoutineList = builtinFunctionCallbackRoutineList;
@@ -455,7 +455,7 @@ struct BuiltinFunctionCallbackObject
 		{
 			if (routine.beforeRoutine != nullptr)
 			{
-				routine.beforeRoutine(Result, Self, Other, numArgs, Args);
+				routine.beforeRoutine(Result, Self, Other, ArgumentCount, Arguments);
 				routine.callOriginalFunctionFlag = callOriginalFunctionFlag;
 				routine.cancelOriginalFunctionFlag = cancelOriginalFunctionFlag;
 				callFlag = callFlag || callOriginalFunctionFlag;
@@ -481,13 +481,13 @@ struct BuiltinFunctionCallbackObject
 		}
 		else if (callFlag || !cancelFlag)
 		{
-			callbackRoutineList.originalFunction(Result, Self, Other, numArgs, Args);
+			callbackRoutineList.originalFunction(Result, Self, Other, ArgumentCount, Arguments);
 		}
 		for (CallbackRoutine<TRoutine>& routine : callbackRoutineList.routineList)
 		{
 			if (routine.afterRoutine != nullptr)
 			{
-				routine.afterRoutine(Result, Self, Other, numArgs, Args);
+				routine.afterRoutine(Result, Self, Other, ArgumentCount, Arguments);
 			}
 		}
 		builtinFunctionCallbackRoutineList = prevBuiltinFunctionCallbackRoutineList;
@@ -498,14 +498,14 @@ struct BuiltinFunctionCallbackObject
 
 template<size_t index>
 void builtinFunctionCallbackHelper(
-	OUT RValue* Result,
+	OUT RValue& Result,
 	IN CInstance* Self,
 	IN CInstance* Other,
-	IN int numArgs,
-	IN RValue* Args
+	IN int ArgumentCount,
+	IN RValue Arguments[]
 )
 {
-	builtinFunctionCallbackArr[index].HandleBuiltinFunctionCallback(Result, Self, Other, numArgs, Args);
+	builtinFunctionCallbackArr[index].HandleBuiltinFunctionCallback(Result, Self, Other, ArgumentCount, Arguments);
 }
 
 template<size_t... Is>

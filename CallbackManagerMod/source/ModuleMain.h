@@ -1,9 +1,12 @@
 #pragma once
 #define ENABLEPROFILER 0
-#include <YYToolkit/shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include "CallbackRoutineList.h"
 using namespace Aurie;
 using namespace YYTK;
+
+#define VERSION_NUM "v1.0.14"
+#define MODNAME "Callback Manager Mod " VERSION_NUM
 
 extern YYTKInterface* g_ModuleInterface;
 extern YYRunnerInterface g_RunnerInterface;
