@@ -16,7 +16,7 @@ CallbackManagerInterface callbackManager;
 std::ofstream outputLog;
 int FrameNumber = 0;
 bool hasObtainedTimeVar = false;
-RValue timeVar;
+RValue timeVar = 0;
 
 void FrameCallback(FWFrame& FrameContext)
 {
@@ -89,16 +89,53 @@ void YYErrorFunction(const char* error, ...)
 	origYYErrorFunction(outputString.c_str());
 }
 
+void runnerInitCallback(FunctionWrapper<void(int)>& dummyWrapper)
+{
+	g_RunnerInterface = g_ModuleInterface->GetRunnerInterface();
+
+	PVOID trampolineFunc = nullptr;
+	MmCreateHook(g_ArSelfModule, "YYError", g_RunnerInterface.YYError, YYErrorFunction, &trampolineFunc);
+	origYYErrorFunction = (YYErrorFunc)trampolineFunc;
+
+	AurieStatus status = g_ModuleInterface->CreateCallback(g_ArSelfModule, EVENT_OBJECT_CALL, CodeCallback, 0);
+
+	if (!AurieSuccess(status))
+	{
+		DbgPrintEx(LOG_SEVERITY_CRITICAL, "Failed to create code event callback with status %d", status);
+		return;
+	}
+}
+
 EXPORTED AurieStatus ModulePreinitialize(
 	IN AurieModule* Module,
 	IN const fs::path& ModulePath
 )
 {
+	UNREFERENCED_PARAMETER(ModulePath);
+
 	CreateDirectory(L"Logs", NULL);
 	auto time = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 	outputLog.open(std::format("Logs/{:%Y_%m_%d_%H_%M_%S}.log", time));
 
 	ObCreateInterface(Module, &callbackManager, "callbackManager");
+
+	// Gets a handle to the interface exposed by YYTK
+	// You can keep this pointer for future use, as it will not change unless YYTK is unloaded.
+	g_ModuleInterface = GetInterface();
+
+	// If we can't get the interface, we fail loading.
+	if (g_ModuleInterface == nullptr)
+	{
+		DbgPrintEx(LOG_SEVERITY_CRITICAL, "Failed to get YYTK interface");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
+
+	g_ModuleInterface->CreateCallback(
+		Module,
+		EVENT_RUNNER_INIT,
+		runnerInitCallback,
+		100
+	);
 	return AURIE_SUCCESS;
 }
 
@@ -109,21 +146,9 @@ EXPORTED AurieStatus ModuleInitialize(
 {
 	UNREFERENCED_PARAMETER(ModulePath);
 
-	AurieStatus last_status = AURIE_SUCCESS;
-
-	// Gets a handle to the interface exposed by YYTK
-	// You can keep this pointer for future use, as it will not change unless YYTK is unloaded.
-	last_status = ObGetInterface(
-		"YYTK_Main",
-		(AurieInterfaceBase*&)(g_ModuleInterface)
-	);
-
-	// If we can't get the interface, we fail loading.
-	if (!AurieSuccess(last_status))
-		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
-
 	if (ENABLEPROFILER)
 	{
+		AurieStatus last_status = AURIE_SUCCESS;
 		last_status = g_ModuleInterface->CreateCallback(
 			Module,
 			EVENT_FRAME,
@@ -133,16 +158,10 @@ EXPORTED AurieStatus ModuleInitialize(
 
 		if (!AurieSuccess(last_status))
 		{
-			g_ModuleInterface->Print(CM_RED, "Failed to register frame callback");
+			DbgPrintEx(LOG_SEVERITY_ERROR, "Failed to register frame callback");
 		}
 		g_ModuleInterface->GetGlobalInstance(&globalInstance);
 	}
-
-	g_RunnerInterface = g_ModuleInterface->GetRunnerInterface();
-
-	PVOID trampolineFunc = nullptr;
-	MmCreateHook(g_ArSelfModule, "YYError", g_RunnerInterface.YYError, YYErrorFunction, &trampolineFunc);
-	origYYErrorFunction = (YYErrorFunc)trampolineFunc;
 
 	callbackManager.LogToFile(MODNAME, "Finished initialization");
 
