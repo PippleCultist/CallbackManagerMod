@@ -23,6 +23,7 @@ struct CallbackRoutineList
 	RoutineType callbackRoutine;
 	RoutineType originalFunction;
 	std::string name;
+	PFUNC_YYGMLScript funcPointer = nullptr;
 	int index;
 
 	CallbackRoutineList() : callbackRoutine(nullptr), originalFunction(nullptr), index(0)
@@ -30,6 +31,10 @@ struct CallbackRoutineList
 	}
 
 	CallbackRoutineList(std::string name, int index) : callbackRoutine(nullptr), originalFunction(nullptr), name(name), index(index)
+	{
+	}
+
+	CallbackRoutineList(PFUNC_YYGMLScript funcPointer, int index) : callbackRoutine(nullptr), originalFunction(nullptr), funcPointer(funcPointer), index(index)
 	{
 	}
 };

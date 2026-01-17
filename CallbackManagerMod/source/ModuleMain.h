@@ -5,7 +5,7 @@
 using namespace Aurie;
 using namespace YYTK;
 
-#define VERSION_NUM "v1.1.0"
+#define VERSION_NUM "v1.1.1"
 #define MODNAME "Callback Manager Mod " VERSION_NUM
 
 extern YYTKInterface* g_ModuleInterface;
